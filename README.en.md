@@ -4,7 +4,11 @@ English · **[Русский](README.md)**
 
 A window with your net worth, timers and hints on top of Dota 2 on macOS. It also works over the game in fullscreen.
 
-![Overlay window](docs/overlay.png)
+![The overlay during a match](docs/ingame.jpg)
+
+<p>
+  <img src="docs/overlay-en.png" alt="Overlay window" width="300">
+</p>
 
 ## What it shows
 
@@ -15,6 +19,15 @@ A window with your net worth, timers and hints on top of Dota 2 on macOS. It als
 - **Spectator mode** and **last match results**.
 
 Size, layout, transparency, scale and the set of stats are configurable. The interface is available in English and Russian. `Ctrl+Shift+H` hides and shows the window.
+
+## Settings
+
+The interface is available in English and Russian — switch the language in settings.
+
+<p>
+  <img src="docs/settings-en.png" alt="Settings in English" width="400">
+  <img src="docs/settings-ru.png" alt="Settings in Russian" width="400">
+</p>
 
 ## Install
 

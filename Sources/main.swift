@@ -255,6 +255,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             self?.redraw()
         }
         data.loadConstants()
+        data.prepare(heroID: demoFrame().heroID)   // чтобы в примере в настройках сразу были сборка и портрет
 
         shownLanguage = store.s.language
         let gsi = installGSIConfig()
