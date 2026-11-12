@@ -1,6 +1,6 @@
 cask "networth-overlay" do
-  version "1.0.0"
-  sha256 "803abe8e0ebba258e4962e13b2582c0c68aa6da5cc62a809fd78df295ddb045c"
+  version "1.0.1"
+  sha256 "7de63b074e2245b0331efdc227020ba1e62e54f53a45c90a9beb55636167640e"
 
   url "https://github.com/6ermutka/networth-overlay/releases/download/v#{version}/NetworthOverlay-#{version}.zip"
   name "Networth Overlay"
