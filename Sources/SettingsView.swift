@@ -18,6 +18,8 @@ final class AppModel: ObservableObject {
     @Published var updateLine = ""
     @Published var newVersion: String?
     @Published var viaBrew = false
+    /// Этап идущего обновления: fetch, install, restart, fail; nil — не идёт.
+    @Published var updateStage: String?
 
     var play: () -> Void = {}
     var toggleReposition: () -> Void = {}
@@ -26,6 +28,7 @@ final class AppModel: ObservableObject {
     var loadLastMatch: () -> Void = {}
     var checkUpdate: () -> Void = {}
     var installUpdate: () -> Void = {}
+    var openUpdateLog: () -> Void = {}
 }
 
 struct SettingsView: View {
@@ -316,10 +319,29 @@ struct SettingsView: View {
                 Text(tr("Автообновление работает, когда приложение установлено через Homebrew: brew install --cask networth-overlay", "Auto-update works when the app is installed via Homebrew: brew install --cask networth-overlay"))
                     .font(.caption).foregroundColor(.secondary)
             }
-            HStack {
-                Button(tr("Проверить обновления", "Check for updates"), action: model.checkUpdate)
-                if let version = model.newVersion {
-                    Button(model.viaBrew ? tr("Обновить до \(version)", "Update to \(version)") : tr("Скачать \(version)", "Download \(version)"), action: model.installUpdate)
+            if let stage = model.updateStage, stage != "fail" {
+                // Homebrew не сообщает проценты, поэтому полоска идёт по этапам.
+                VStack(alignment: .leading, spacing: 4) {
+                    ProgressView(value: stage == "fetch" ? 0.2 : stage == "install" ? 0.6 : 0.95)
+                        .frame(width: 360)
+                    Text(stage == "fetch" ? tr("1 из 3 · Узнаю о новой версии у Homebrew…", "1 of 3 · Asking Homebrew about the new version…")
+                         : stage == "install" ? tr("2 из 3 · Скачиваю и ставлю \(model.newVersion ?? "")…", "2 of 3 · Downloading and installing \(model.newVersion ?? "")…")
+                         : tr("3 из 3 · Готово, перезапускаю приложение…", "3 of 3 · Done, restarting the app…"))
+                        .font(.caption).foregroundColor(.secondary)
+                }
+            } else {
+                HStack {
+                    Button(tr("Проверить обновления", "Check for updates"), action: model.checkUpdate)
+                    if let version = model.newVersion {
+                        Button(model.viaBrew ? tr("Обновить до \(version)", "Update to \(version)") : tr("Скачать \(version)", "Download \(version)"), action: model.installUpdate)
+                    }
+                    if model.updateStage == "fail" {
+                        Button(tr("Открыть журнал", "Open the log"), action: model.openUpdateLog)
+                    }
+                }
+                if model.updateStage == "fail" {
+                    Text(tr("Версия не сменилась. Приложение продолжает работать, подробности — в журнале.", "The version did not change. The app keeps running; details are in the log."))
+                        .font(.caption).foregroundColor(.red)
                 }
             }
         }

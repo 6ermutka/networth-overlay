@@ -12,17 +12,31 @@ final class Updater {
     var configured: Bool { !repo.isEmpty }
     var releasesURL: URL? { URL(string: "https://github.com/\(repo)/releases/latest") }
 
+    /// Homebrew, которым поставлено приложение. На одном Mac их бывает два (/opt/homebrew и /usr/local),
+    /// и cask с доверенным tap есть только в одном — поэтому ищем тот, в чьём Caskroom лежит наш cask.
     var brew: String? {
-        ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"].first { FileManager.default.isExecutableFile(atPath: $0) }
+        for prefix in ["/opt/homebrew", "/usr/local"] {
+            let binary = prefix + "/bin/brew"
+            if FileManager.default.isExecutableFile(atPath: binary),
+               FileManager.default.fileExists(atPath: prefix + "/Caskroom/" + Updater.cask) {
+                return binary
+            }
+        }
+        return nil
     }
 
     /// Приложение поставлено через Homebrew — значит, им же можно обновлять.
-    var installedViaBrew: Bool {
-        guard brew != nil else { return false }
-        return ["/opt/homebrew/Caskroom", "/usr/local/Caskroom"].contains {
-            FileManager.default.fileExists(atPath: $0 + "/" + Updater.cask)
-        }
+    var installedViaBrew: Bool { brew != nil }
+
+    let logPath = NSHomeDirectory() + "/Library/Logs/NetworthOverlay-update.log"
+    private let statusPath = NSTemporaryDirectory() + "networth-overlay-update.status"
+
+    /// Этап идущего обновления: fetch → install → restart, либо fail. nil — обновление не идёт.
+    var stage: String? {
+        (try? String(contentsOfFile: statusPath, encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines)
     }
+
+    func clearStage() { try? FileManager.default.removeItem(atPath: statusPath) }
 
     /// Отдаёт номер более новой версии или nil, если обновлений нет (или узнать не удалось).
     func check(completion: @escaping (_ newer: String?, _ failed: Bool) -> Void) {
@@ -46,27 +60,51 @@ final class Updater {
         }.resume()
     }
 
-    /// Запускает `brew upgrade` отдельным процессом, который переживёт выход приложения,
-    /// и снова открывает приложение. Журнал — ~/Library/Logs/NetworthOverlay-update.log.
-    func installWithBrew() -> Bool {
-        guard let brew, installedViaBrew else { return false }
-        let log = NSHomeDirectory() + "/Library/Logs/NetworthOverlay-update.log"
+    /// Запускает обновление отдельным процессом, который переживёт выход приложения: подтягивает tap,
+    /// делает `brew upgrade`, проверяет, что версия действительно сменилась, и перезапускает приложение.
+    /// Этапы пишет в файл состояния (см. `stage`), подробности — в журнал `logPath`.
+    func installWithBrew(target: String) -> Bool {
+        guard let brew, configured else { return false }
         let script = """
-        sleep 2
-        { date; "$BREW" update; "$BREW" upgrade --cask \(Updater.cask); } >> "$LOG" 2>&1
-        open "/Applications/Networth Overlay.app"
+        echo fetch > "$STATUS"
+        echo "=== $(date) обновление до $TARGET через $BREW" >> "$LOG"
+        TAP="$("$BREW" --repo "$TAPNAME" 2>/dev/null)"
+        # Быстрый путь: обновить только наш tap; если не вышло — обычный brew update.
+        if ! { [ -d "$TAP/.git" ] && git -C "$TAP" pull --ff-only -q >> "$LOG" 2>&1; }; then
+          "$BREW" update >> "$LOG" 2>&1
+        fi
+        echo install > "$STATUS"
+        HOMEBREW_NO_AUTO_UPDATE=1 "$BREW" upgrade --cask "$TAPNAME/\(Updater.cask)" >> "$LOG" 2>&1
+        NOW="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist" 2>/dev/null)"
+        if [ "$NOW" = "$TARGET" ]; then
+          echo restart > "$STATUS"
+          sleep 1
+          pkill -x NetworthOverlay
+          sleep 1
+          rm -f "$STATUS"
+          open "$APP"
+        else
+          echo "=== не обновилось: установлена $NOW, ожидалась $TARGET" >> "$LOG"
+          echo fail > "$STATUS"
+          pgrep -x NetworthOverlay > /dev/null || open "$APP"
+        fi
         """
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
         process.arguments = ["-c", script]
         var env = ProcessInfo.processInfo.environment
         env["BREW"] = brew
-        env["LOG"] = log
-        env["HOMEBREW_NO_AUTO_UPDATE"] = "1"   // обновляем явно, строкой выше
+        env["LOG"] = logPath
+        env["STATUS"] = statusPath
+        env["TARGET"] = target
+        env["TAPNAME"] = repo
+        env["APP"] = "/Applications/Networth Overlay.app"
+        env["HOMEBREW_NO_ENV_HINTS"] = "1"
         process.environment = env
         process.standardInput = FileHandle.nullDevice
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
+        try? "fetch".write(toFile: statusPath, atomically: true, encoding: .utf8)
         return (try? process.run()) != nil
     }
 

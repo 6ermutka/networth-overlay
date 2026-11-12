@@ -245,6 +245,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var lastData = Date.distantPast
     private var hiddenByHotkey = false
     private var shownLanguage: String?
+    private var updateTimer: Timer?
 
     func applicationDidFinishLaunching(_ note: Notification) {
         panel.delegate = self
@@ -288,6 +289,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         model.viaBrew = updater.installedViaBrew
         model.checkUpdate = { [weak self] in self?.checkUpdate(auto: false) }
         model.installUpdate = { [weak self] in self?.installUpdate() }
+        model.openUpdateLog = { [weak self] in self?.openUpdateLog() }
+        updater.clearStage()   // след прошлого запуска
 
         store.onChange = { [weak self] in
             guard let self else { return }
@@ -436,12 +439,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func installUpdate() {
-        if updater.installWithBrew() {
-            model.updateLine = tr("— обновляю через Homebrew, приложение перезапустится", "— updating via Homebrew, the app will restart")
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { NSApp.terminate(nil) }
-        } else if let url = updater.releasesURL {
-            NSWorkspace.shared.open(url)
+        guard model.updateStage == nil || model.updateStage == "fail" else { return }   // уже идёт
+        guard let target = model.newVersion, updater.installWithBrew(target: target) else {
+            if let url = updater.releasesURL { NSWorkspace.shared.open(url) }
+            return
         }
+        showSettings()   // чтобы прогресс было видно
+        followUpdate()
+    }
+
+    /// Следит за этапами обновления. Приложение не закрывается само: его перезапустит скрипт,
+    /// когда новая версия уже стоит, а при сбое оно остаётся открытым и показывает ошибку.
+    private func followUpdate() {
+        model.updateStage = updater.stage ?? "fetch"
+        updateTimer?.invalidate()
+        updateTimer = Timer.scheduledTimer(withTimeInterval: 0.4, repeats: true) { [weak self] timer in
+            guard let self else { timer.invalidate(); return }
+            let stage = self.updater.stage
+            self.model.updateStage = stage
+            if stage == nil || stage == "fail" {
+                timer.invalidate()
+                if stage == "fail" {
+                    self.model.updateLine = tr("— обновить не удалось", "— the update failed")
+                }
+            }
+        }
+    }
+
+    private func openUpdateLog() {
+        NSWorkspace.shared.open(URL(fileURLWithPath: updater.logPath))
     }
 
     private func beep(_ metric: Metric) {
