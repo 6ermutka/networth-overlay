@@ -20,8 +20,11 @@
 
 ```bash
 brew tap 6ermutka/networth-overlay https://github.com/6ermutka/networth-overlay
+brew trust 6ermutka/networth-overlay
 brew install --cask networth-overlay
 ```
+
+Homebrew 7 и новее не загружает сторонние репозитории, пока вы явно им не доверились, — за это отвечает вторая команда.
 
 Обновление — `brew upgrade --cask networth-overlay`. Приложение само проверяет новые версии и, если установлено через Homebrew, ставит их (не во время игры; отключается в настройках).
 

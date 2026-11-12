@@ -20,8 +20,11 @@ Size, layout, transparency, scale and the set of stats are configurable. The int
 
 ```bash
 brew tap 6ermutka/networth-overlay https://github.com/6ermutka/networth-overlay
+brew trust 6ermutka/networth-overlay
 brew install --cask networth-overlay
 ```
+
+Homebrew 7 and later refuses to load third-party taps until you explicitly trust them — that is what the second command does.
 
 Update with `brew upgrade --cask networth-overlay`. The app checks for new versions itself and, when installed via Homebrew, installs them (never during a game; can be turned off in settings).
 
