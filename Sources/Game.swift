@@ -12,6 +12,7 @@ struct TeamWorth {
 
 struct Frame {
     var clock = 0.0
+    var paused = false
     var matchID = ""
     var spectator = false
     var heroID: Int?
@@ -123,6 +124,7 @@ final class MatchState {
 
         var f = Frame()
         f.clock = clock
+        f.paused = (map["paused"] as? Bool) ?? false
         f.matchID = id
 
         // Часы событий (game_time) переводим в часы матча (clock_time).

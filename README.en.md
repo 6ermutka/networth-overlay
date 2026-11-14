@@ -62,6 +62,10 @@ xattr -dr com.apple.quarantine "/Applications/Networth Overlay.app"
 
 This project is not affiliated with Valve. Dota 2 is a trademark of Valve Corporation.
 
+## Load on the game
+
+Dota sends data at most once a second and only the blocks that are used; the app advances timers between packets itself. On quit the app removes its config file from the Dota folder so the game does not keep sending data to nobody. So open the app before starting the game: Dota reads its config only at launch.
+
 ## Limitations
 
 - Turbo mode is a manual checkbox: the game does not report it.

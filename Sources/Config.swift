@@ -171,6 +171,8 @@ struct Settings: Codable, Equatable {
     var language: String?
     /// Ставить новые версии самому (через Homebrew). nil — как true.
     var autoUpdate: Bool?
+    /// Оставлять файл GSI в папке Dota после выхода из приложения. nil — как false.
+    var keepConfig: Bool?
 
     func soundName(_ m: Metric) -> String { soundNames?[m.rawValue] ?? Sounds.defaults[m] ?? "Glass" }
 

@@ -135,8 +135,14 @@ final class GSIServer {
                     if let json = try? JSONSerialization.jsonObject(with: body.prefix(length)) as? [String: Any] {
                         self?.onPayload?(json)
                     }
-                    let reply = "HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
-                    c.send(content: Data(reply.utf8), completion: .contentProcessed { _ in c.cancel() })
+                    // Соединение не рвём: клиент может слать следующие пакеты по нему же,
+                    // не открывая новое подключение на каждый.
+                    let close = head.contains("connection: close") || done || error != nil
+                    let reply = "HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: \(close ? "close" : "keep-alive")\r\n\r\n"
+                    let rest = Data(body.dropFirst(length))
+                    c.send(content: Data(reply.utf8), completion: .contentProcessed { _ in
+                        if close { c.cancel() } else { self?.read(c, buffer: rest) }
+                    })
                     return
                 }
             }
@@ -149,6 +155,8 @@ final class GSIServer {
 // MARK: - Файл GSI в папке Dota
 
 /// Кладёт конфиг, по которому Dota шлёт нам данные.
+/// Конфиг намеренно лёгкий: Dota отправляет состояние не чаще раза в секунду (таймеры между
+/// пакетами приложение досчитывает само) и только те блоки, которые реально используются.
 func installGSIConfig() -> (found: Bool, ok: Bool, line: String) {
     let fm = FileManager.default
     guard fm.fileExists(atPath: dotaCfgDir) else { return (false, false, tr("папка Dota 2 не найдена", "Dota 2 folder not found")) }
@@ -158,13 +166,12 @@ func installGSIConfig() -> (found: Bool, ok: Bool, line: String) {
     "Networth Overlay"
     {
     \t"uri"        "http://127.0.0.1:\(gsiPort)/"
-    \t"timeout"    "5.0"
-    \t"buffer"     "0.1"
-    \t"throttle"   "0.5"
+    \t"timeout"    "2.0"
+    \t"buffer"     "0.5"
+    \t"throttle"   "1.0"
     \t"heartbeat"  "10.0"
     \t"data"
     \t{
-    \t\t"provider"  "1"
     \t\t"map"       "1"
     \t\t"player"    "1"
     \t\t"hero"      "1"
@@ -182,6 +189,12 @@ func installGSIConfig() -> (found: Bool, ok: Bool, line: String) {
     } catch {
         return (true, false, tr("файл настроек не записан: \(error.localizedDescription)", "config file not written: \(error.localizedDescription)"))
     }
+}
+
+/// Убирает наш конфиг. Пока приложение не запущено, слушать порт некому, а Dota (она читает
+/// конфиги при старте) всё равно слала бы данные в пустоту весь матч и тратила на это ресурсы.
+func removeGSIConfig() {
+    try? FileManager.default.removeItem(atPath: dotaCfgDir + "/gamestate_integration/" + cfgName)
 }
 
 // MARK: - Запуск Dota через Steam
@@ -243,9 +256,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var lastFrame: Frame?
     private var lastHint: String?
     private var lastData = Date.distantPast
+    private var baseFrame: Frame?      // последний кадр от игры, как пришёл
     private var hiddenByHotkey = false
     private var shownLanguage: String?
     private var updateTimer: Timer?
+    private var termSource: DispatchSourceSignal?
 
     func applicationDidFinishLaunching(_ note: Notification) {
         panel.delegate = self
@@ -323,6 +338,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         NSWorkspace.shared.notificationCenter.addObserver(
             self, selector: #selector(appsChanged), name: NSWorkspace.didActivateApplicationNotification, object: nil)
         Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in self?.tick() }
+        Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.advanceClock() }
+
+        // Завершение по сигналу (kill, выход из системы) тоже должно пройти через applicationWillTerminate.
+        signal(SIGTERM, SIG_IGN)
+        let term = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
+        term.setEventHandler { NSApp.terminate(nil) }
+        term.resume()
+        termSource = term
 
         buildMenu()
         tick()
@@ -332,6 +355,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if CommandLine.arguments.contains("--demo") { model.repositioning = true; redraw() }
         if !CommandLine.arguments.contains("--background") { showSettings() }
         snapshotSettingsIfAsked()
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        if !(store.s.keepConfig ?? false) { removeGSIConfig() }
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -346,6 +373,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         model.dataOK = true
         guard let frame = match.ingest(json, turbo: store.s.turbo) else {
             lastFrame = nil
+            baseFrame = nil
             lastHint = nil
             model.dataLine = tr("Dota на связи, матч не идёт", "Dota connected, no match in progress")
             redraw()
@@ -357,6 +385,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             UserDefaults.standard.set(hero, forKey: "lastHeroID")
         }
         data.prepare(heroID: frame.heroID)
+        baseFrame = frame
+        lastFrame = frame
+        lastHint = alerts.update(frame, settings: store.s)
+        redraw()
+    }
+
+    /// Между пакетами от игры двигаем часы сами, чтобы таймеры шли ровно каждую секунду.
+    private func advanceClock() {
+        guard var frame = baseFrame, lastFrame != nil, !frame.paused else { return }
+        let elapsed = Date().timeIntervalSince(lastData)
+        guard elapsed > 0.2, elapsed < 15 else { return }
+        frame.clock += elapsed
         lastFrame = frame
         lastHint = alerts.update(frame, settings: store.s)
         redraw()
@@ -367,6 +407,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if lastFrame != nil, Date().timeIntervalSince(lastData) > 30 {
             // Dota замолчала: матч кончился или игру закрыли.
             lastFrame = nil
+            baseFrame = nil
             lastHint = nil
             model.dataOK = false
             model.dataLine = tr("нет данных больше 30 с", "no data for over 30 s")

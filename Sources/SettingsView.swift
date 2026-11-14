@@ -72,7 +72,7 @@ struct SettingsView: View {
                     .keyboardShortcut(.defaultAction)
                 Button(store.s.enabled ? tr("Выключить", "Turn off") : tr("Включить", "Turn on")) { store.s.enabled.toggle() }
                     .controlSize(.large)
-                Text(tr("«Играть» запускает Dota 2 через Steam с параметром -gamestateintegration.", "“Play” launches Dota 2 through Steam with the -gamestateintegration option."))
+                Text(tr("«Играть» запускает Dota 2 через Steam с параметром -gamestateintegration. Открывайте приложение до игры: Dota читает настройки только при запуске.", "“Play” launches Dota 2 through Steam with the -gamestateintegration option. Open the app before the game: Dota reads its config only at launch."))
                     .font(.caption).foregroundColor(.secondary)
             }
             .padding(.top, 4)
@@ -142,6 +142,9 @@ struct SettingsView: View {
             Toggle(tr("Клики сквозь окно — в игре окно совсем не ловит мышь", "Click-through — the window ignores the mouse in game"), isOn: $store.s.clickThrough)
             Toggle(tr("Показывать только когда Dota 2 на экране", "Show only while Dota 2 is in front"), isOn: $store.s.onlyWhenDotaFront)
             Toggle(tr("Режим Turbo — другие сроки Рошана и Эгиды (игра этот режим не сообщает)", "Turbo mode — different Roshan and Aegis timings (the game does not report this mode)"), isOn: $store.s.turbo)
+            Toggle(tr("Не убирать файл настроек из папки Dota при выходе (тогда при закрытом приложении Dota шлёт данные в пустоту)", "Keep the config file in the Dota folder on quit (Dota then keeps sending data to nobody while the app is closed)"), isOn: Binding(
+                get: { store.s.keepConfig ?? false },
+                set: { store.s.keepConfig = $0 }))
             Toggle(tr("Брать сборки, обычный GPM/XPM героя и итоги матча с OpenDota", "Get builds, typical hero GPM/XPM and match results from OpenDota"), isOn: $store.s.openData)
             HStack {
                 Button(model.repositioning ? tr("Готово, спрятать пример", "Done, hide the example") : tr("Переставить окно", "Move the window"), action: model.toggleReposition)
